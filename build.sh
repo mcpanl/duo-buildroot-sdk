@@ -147,6 +147,10 @@ function milkv_pack_sd()
   if [ -f "${img_in}" ]; then
     mv ${img_in} out/${img_out}
     print_info "Create SD image successful: out/${img_out}"
+
+    print_info "Copy to hdd4t."
+    cp "out/${img_out}" /mnt/hdd4t
+    print_info "DONE!"	 
   else
     print_err "Create SD image failed!"
     exit 1
@@ -267,3 +271,4 @@ build_info
 
 milkv_build
 milkv_pack
+

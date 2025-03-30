@@ -16,10 +16,31 @@
 
 &spi2 {
 	status = "okay";
+	/delete-node/ spidev@0;
+    st7735s: st7735s@0 {
+        status = "okay";
+        compatible = "sitronix,st7735s";
+        reg = <0>; // SPI片选编号
+        spi-max-frequency = <40000000>; // SPI时钟频率，根据屏幕规格调整
+	
+	// cs-gpios = <&porta 16 GPIO_ACTIVE_LOW>;
+	
+        // GPIO控制引脚
+        dc-gpios = <&porta 15 GPIO_ACTIVE_HIGH>; // 数据/命令选择引脚
+        reset-gpios = <&porta 14 GPIO_ACTIVE_LOW>; // 复位引脚
 
-	spidev@0 {
-		status = "okay";
-	};
+        // 屏幕参数
+        width = <160>; // 实际显示宽度
+        height = <80>; // 实际显示高度
+        rotation = <0>; // 显示旋转角度（0, 90, 180, 270）
+	buswidth = <8>;
+	fps = <30>;
+	debug = <1>;
+	
+        // 供电配置（可选）
+        // vcc-supply = <&vcc_3v3>; // 假设3.3V电源
+        // backlight-supply = <&backlight_reg>; // 背光控制（若有）
+    };
 };
 
 &i2c0 {
@@ -28,6 +49,26 @@
 
 &i2c4 {
 	status = "disabled";
+};
+
+&i2c2 {
+	status = "okay";
+	
+	ssd1306@3c {
+		compatible = "solomon,ssd1306fb-i2c";
+		reg = <0x3c>;
+		solomon,width = <128>;
+		solomon,height = <64>;
+		solomon,page-offset = <0>;
+        	solomon,contrast = <0xCF>;     // 对比度 0x81 0xCF
+        	solomon,prechargep1 = <0xF>;   // 预充电 Phase1=15 (0xF)
+        	solomon,prechargep2 = <0x1>;   // 预充电 Phase2=1 (0x1)
+        	solomon,vcomh = <0x00>;        // VCOMH 0xDB 0x00
+        	solomon,charge-pump = <0x14>;  // 电荷泵 0x8D 0x14
+		solomon,segment-no-remap = <1>; // 启用段重映射（0xA1 命令）
+        	// solomon,com-invdir;           // 行扫描反向 (0xC8)
+        	// solomon,com-lrremap;          // COM左右重映射 (0xDA 0x12)
+	};
 };
 
 &uart1 {
@@ -44,5 +85,14 @@
 
 / {
 	model = "Milk-V Duo256M";
+	
+	leds {
+		compatible = "gpio-leds";
+
+		led-user {
+			gpios = <&porte 2 GPIO_ACTIVE_HIGH>;
+			linux,default-trigger = "activity";
+		};
+	};
 };
 

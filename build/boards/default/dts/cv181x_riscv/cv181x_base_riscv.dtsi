@@ -255,6 +255,7 @@
 	i2c2: i2c@04020000 {
 		interrupts = <51 IRQ_TYPE_LEVEL_HIGH>;
 		interrupt-parent = <&plic0>;
+		clock-frequency = <400000>;
 	};
 
 	i2c3: i2c@04030000 {

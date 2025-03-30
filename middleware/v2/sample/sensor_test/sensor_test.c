@@ -9,6 +9,8 @@
 #include <sys/time.h>
 #include <sys/param.h>
 #include <inttypes.h>
+#include <sys/ioctl.h>
+#include <math.h>
 
 #include <fcntl.h>		/* low-level i/o */
 #include "cvi_buffer.h"
@@ -23,8 +25,202 @@
 #include "sample_comm.h"
 #include "ae_test.h"
 
+
+#define FB_DEVICE "/dev/fb0"
+#define WIDTH 160
+#define HEIGHT 80
+
 static SAMPLE_VI_CONFIG_S g_stViConfig;
 static SAMPLE_INI_CFG_S g_stIniCfg;
+VI_DEV_ATTR_S stViDevAttr;
+
+void YUV420p_to_RGB565(uint8_t *yuv, uint16_t *rgb, int src_width, int src_height, int dst_width, int dst_height) {
+    int i, j;
+    int Y, U, V, R, G, B;
+    int uvIndex, yIndex;
+    
+    // 计算缩放比例
+    float scale_w = (float)src_width / dst_width;
+    float scale_h = (float)src_height / dst_height;
+    float scale = fmin(scale_w, scale_h); // 选择合适的缩放比例
+    
+    int new_width = (int)(dst_width * scale);
+    int new_height = (int)(dst_height * scale);
+    
+    int crop_x = (src_width - new_width) / 2;
+    int crop_y = (src_height - new_height) / 2;
+
+    for (j = 0; j < dst_height; j++) {
+        for (i = 0; i < dst_width; i++) {
+            // 计算源图像中的坐标
+            int src_x = crop_x + (int)(i * scale);
+            int src_y = crop_y + (int)(j * scale);
+            
+	    uvIndex = (src_y / 2) * src_width + (src_x & ~1);
+		V = yuv[src_width * src_height + uvIndex] - 128;
+		U = yuv[src_width * src_height + uvIndex + 1] - 128;
+
+            yIndex = src_y * src_width + src_x;
+            //uvIndex = (src_y / 2) * (src_width / 2) + (src_x / 2);
+
+            Y = yuv[yIndex];
+            //U = yuv[src_width * src_height + uvIndex] - 128;
+            //V = yuv[src_width * src_height + (src_width * src_height) / 4 + uvIndex] - 128;
+
+	    //R = Y + 1.402 * V;
+            //G = Y - 0.344 * U - 0.714 * V;
+            //B = Y + 1.772 * U;
+
+	    R = Y + 1.5748 * V;
+	    G = Y - 0.1873 * U - 0.4681 * V;
+	    B = Y + 1.8556 * U;
+
+
+            R = (R < 0) ? 0 : (R > 255) ? 255 : R;
+            G = (G < 0) ? 0 : (G > 255) ? 255 : G;
+            B = (B < 0) ? 0 : (B > 255) ? 255 : B;
+
+            rgb[j * dst_width + i] = ((R >> 3) << 11) | ((G >> 2) << 5) | (B >> 3);
+        }
+    }
+}
+
+void __YUV420p_to_RGB565(uint8_t *yuv, uint16_t *rgb, int src_width, int src_height, int crop_x, int crop_y) {
+    int i, j;
+    int Y, U, V, R, G, B;
+    int uvIndex, yIndex;
+    
+    for (j = 0; j < HEIGHT; j++) {
+        for (i = 0; i < WIDTH; i++) {
+            int src_x = crop_x + i;
+            int src_y = crop_y + j;
+            yIndex = src_y * src_width + src_x;
+            uvIndex = (src_y / 2) * (src_width / 2) + (src_x / 2);
+            
+            Y = yuv[yIndex];
+            U = yuv[src_width * src_height + uvIndex] - 128;
+            V = yuv[src_width * src_height + (src_width * src_height) / 4 + uvIndex] - 128;
+
+            R = Y + 1.402 * V;
+            G = Y - 0.344 * U - 0.714 * V;
+            B = Y + 1.772 * U;
+
+            R = (R < 0) ? 0 : (R > 255) ? 255 : R;
+            G = (G < 0) ? 0 : (G > 255) ? 255 : G;
+            B = (B < 0) ? 0 : (B > 255) ? 255 : B;
+
+            rgb[j * WIDTH + i] = ((R >> 3) << 11) | ((G >> 2) << 5) | (B >> 3);
+        }
+    }
+}
+
+void _YUV420p_to_RGB565(uint8_t *yuv, uint16_t *rgb, int src_width, int src_height, int dst_width, int dst_height) {
+    int i, j;
+    int Y, U, V, R, G, B;
+    int uvIndex, yIndex;
+    
+    // 计算缩放比例
+    float scale_w = (float)src_width / dst_width;
+    float scale_h = (float)src_height / dst_height;
+    float scale = fmin(scale_w, scale_h); // 选择合适的缩放比例
+    
+    int new_width = (int)(dst_width * scale);
+    int new_height = (int)(dst_height * scale);
+    
+    int crop_x = (src_width - new_width) / 2;
+    int crop_y = (src_height - new_height) / 2;
+
+    for (j = 0; j < dst_height; j++) {
+        for (i = 0; i < dst_width; i++) {
+            // 计算源图像中的坐标
+            int src_x = crop_x + (int)(i * scale);
+            int src_y = crop_y + (int)(j * scale);
+            
+            yIndex = src_y * src_width + src_x;
+            uvIndex = (src_y / 2) * (src_width / 2) + (src_x / 2);
+
+            Y = yuv[yIndex];
+            U = yuv[src_width * src_height + uvIndex] - 128;
+            V = yuv[src_width * src_height + (src_width * src_height) / 4 + uvIndex] - 128;
+
+            R = Y + 1.402 * V;
+            G = Y - 0.344 * U - 0.714 * V;
+            B = Y + 1.772 * U;
+
+            R = (R < 0) ? 0 : (R > 255) ? 255 : R;
+            G = (G < 0) ? 0 : (G > 255) ? 255 : G;
+            B = (B < 0) ? 0 : (B > 255) ? 255 : B;
+
+            rgb[j * dst_width + i] = ((R >> 3) << 11) | ((G >> 2) << 5) | (B >> 3);
+        }
+    }
+}
+
+
+int save_rgb565(const char *filename, uint16_t *data, int width, int height) {
+    FILE *fp = fopen(filename, "wb");
+    if (!fp) {
+        perror("Failed to open file");
+        return -1;
+    }
+    fwrite(data, sizeof(uint16_t), width * height, fp);
+    fclose(fp);
+    return 0;
+}
+
+void _process_frame(uint8_t *yuv_data, int src_width, int src_height, const char *output_name) {
+    uint16_t *rgb_data = (uint16_t *)malloc(WIDTH * HEIGHT * sizeof(uint16_t));
+    if (!rgb_data) {
+        perror("Memory allocation failed");
+        return;
+    }
+
+    YUV420p_to_RGB565(yuv_data, rgb_data, src_width, src_height, (src_width - WIDTH) / 2, (src_height - HEIGHT) / 2);
+    save_rgb565(output_name, rgb_data, WIDTH, HEIGHT);
+    
+    free(rgb_data);
+
+    // 打开 fb0 设备
+    int fb_fd = open(FB_DEVICE, O_WRONLY);
+    if (fb_fd < 0) {
+        perror("Failed to open framebuffer device");
+        free(rgb_data);
+        return;
+    }
+}
+
+
+void process_frame(uint8_t *yuv_data, int src_width, int src_height, const char *output_name) {
+    printf(output_name);
+    uint16_t *rgb_data = (uint16_t *)malloc(WIDTH * HEIGHT * sizeof(uint16_t));
+    if (!rgb_data) {
+        perror("Memory allocation failed");
+        return;
+    }
+
+    // YUV 转 RGB565
+    YUV420p_to_RGB565(yuv_data, rgb_data, src_width, src_height, 160, 80);
+
+    // 打开 fb0 设备
+    int fb_fd = open(FB_DEVICE, O_WRONLY);
+    if (fb_fd < 0) {
+       perror("Failed to open framebuffer device");
+       free(rgb_data);
+       return;
+    }
+
+    // 写入 framebuffer
+    ssize_t bytes_written = write(fb_fd, rgb_data, WIDTH * HEIGHT * sizeof(uint16_t));
+    if (bytes_written < 0) {
+        perror("Failed to write to framebuffer");
+    } else {
+        printf("Successfully wrote %zd bytes to framebuffer\n", bytes_written);
+    }
+
+    // 关闭 framebuffer 设备
+    close(fb_fd);
+    free(rgb_data);
+}
 
 static int sys_vi_init(void)
 {
@@ -54,9 +250,15 @@ static int sys_vi_init(void)
 	/************************************************
 	 * step1:  Config VI
 	 ************************************************/
+	
 	s32Ret = SAMPLE_COMM_VI_IniToViCfg(&stIniCfg, &stViConfig);
 	if (s32Ret != CVI_SUCCESS)
 		return s32Ret;
+
+
+	// SAMPLE_SNS_TYPE_E  enSnsType   = SONY_IMX327_MIPI_2M_30FPS_12BIT;
+	
+	// s32Ret = CVI_VI_SetDevAttr(0, &stViConfig);
 
 	memcpy(&g_stViConfig, &stViConfig, sizeof(SAMPLE_VI_CONFIG_S));
 	memcpy(&g_stIniCfg, &stIniCfg, sizeof(SAMPLE_INI_CFG_S));
@@ -107,32 +309,45 @@ static CVI_S32 _vi_get_chn_frame(CVI_U8 chn)
 {
 	VIDEO_FRAME_INFO_S stVideoFrame;
 	VI_CROP_INFO_S crop_info = {0};
-
+	// 123
 	if (CVI_VI_GetChnFrame(0, chn, &stVideoFrame, 3000) == 0) {
-		FILE *output;
+		//FILE *output;
 		size_t image_size = stVideoFrame.stVFrame.u32Length[0] + stVideoFrame.stVFrame.u32Length[1]
 				  + stVideoFrame.stVFrame.u32Length[2];
 		CVI_VOID *vir_addr;
 		CVI_U32 plane_offset, u32LumaSize, u32ChromaSize;
 		CVI_CHAR img_name[128] = {0, };
+		char rgb_name[128] = {0};
 
 		SAMPLE_PRT("width: %d, height: %d, total_buf_length: %zu\n",
 			   stVideoFrame.stVFrame.u32Width,
 			   stVideoFrame.stVFrame.u32Height, image_size);
 
-		snprintf(img_name, sizeof(img_name), "sample_%d.yuv", chn);
+		int suffix = 1;
 
-		output = fopen(img_name, "wb");
-		if (output == NULL) {
-			memset(img_name, 0x0, sizeof(img_name));
-			snprintf(img_name, sizeof(img_name), "/mnt/data/sample_%d.yuv", chn);
-			output = fopen(img_name, "wb");
-			if (output == NULL) {
-				CVI_VI_ReleaseChnFrame(0, chn, &stVideoFrame);
-				SAMPLE_PRT("fopen fail\n");
-				return CVI_FAILURE;
-			}
-		}
+		do {
+
+		    snprintf(img_name, sizeof(img_name), "sample_%d_%d.yuv", chn, suffix);
+		    snprintf(rgb_name, sizeof(rgb_name), "sample_%d_%d.rgb", chn, suffix);
+		    suffix++;
+
+		} while (access(img_name, F_OK) == 0);
+
+		SAMPLE_PRT("[%s]\n", img_name);
+
+		// snprintf(img_name, sizeof(img_name), "sample_%d.yuv", chn);
+
+		//output = fopen(img_name, "wb");
+		//if (output == NULL) {
+		//	memset(img_name, 0x0, sizeof(img_name));
+		//	snprintf(img_name, sizeof(img_name), "/mnt/data/sample_%d.yuv", chn);
+		//	output = fopen(img_name, "wb");
+		//	if (output == NULL) {
+		//		CVI_VI_ReleaseChnFrame(0, chn, &stVideoFrame);
+		//		SAMPLE_PRT("fopen fail\n");
+		//		return CVI_FAILURE;
+		//	}
+		//}
 
 		u32LumaSize =  stVideoFrame.stVFrame.u32Stride[0] * stVideoFrame.stVFrame.u32Height;
 		u32ChromaSize =  stVideoFrame.stVFrame.u32Stride[1] * stVideoFrame.stVFrame.u32Height / 2;
@@ -156,8 +371,15 @@ static CVI_S32 _vi_get_chn_frame(CVI_U8 chn)
 					   stVideoFrame.stVFrame.pu8VirAddr[i],
 					   stVideoFrame.stVFrame.u32Stride[i],
 					   stVideoFrame.stVFrame.u32Length[i]);
-				fwrite((void *)stVideoFrame.stVFrame.pu8VirAddr[i]
-					, (i == 0) ? u32LumaSize : u32ChromaSize, 1, output);
+				// fwrite((void *)stVideoFrame.stVFrame.pu8VirAddr[i]
+				//	, (i == 0) ? u32LumaSize : u32ChromaSize, 1, output);
+				int a = u32LumaSize + u32ChromaSize;
+
+				printf("a %d", a);
+				process_frame((uint8_t *)stVideoFrame.stVFrame.pu8VirAddr[0],
+              				stVideoFrame.stVFrame.u32Width,
+              				stVideoFrame.stVFrame.u32Height,
+              				rgb_name);
 			}
 		}
 		CVI_SYS_Munmap(vir_addr, image_size);
@@ -165,7 +387,7 @@ static CVI_S32 _vi_get_chn_frame(CVI_U8 chn)
 		if (CVI_VI_ReleaseChnFrame(0, chn, &stVideoFrame) != 0)
 			SAMPLE_PRT("CVI_VI_ReleaseChnFrame NG\n");
 
-		fclose(output);
+		//fclose(output);
 		return CVI_SUCCESS;
 	}
 	SAMPLE_PRT("CVI_VI_GetChnFrame NG\n");
@@ -561,8 +783,12 @@ int main(int argc, char **argv)
 	UNUSED(argv);
 
 	setbuf(stdout, NULL);
+	
+
+	printf("=== BEGIN ===\n");
 
 	s32Ret = sys_vi_init();
+	
 	if (s32Ret != CVI_SUCCESS)
 		return s32Ret;
 
