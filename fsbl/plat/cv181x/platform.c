@@ -331,11 +331,11 @@ void sys_pll_nd(int vc_overdrive)
 	// set clk_sel_24: [24] clk_sel for clk_c906_1 = 1 (DIV_IN0_SRC_MUX)
 	mmio_write_32(0x03002020, 0x01800000);
 
-	// set div, src_mux of clk_c906_0: [20:16]div_factor=1, [9:8]clk_src = 3 (mpll), 850/1 = 850MHz
-	mmio_write_32(0x03002130, 0x00010309);
+	// set div, src_mux of clk_c906_0: [20:16]div_factor=2, [9:8]clk_src = 3 (mpll), 850/2 = 425MHz
+	mmio_write_32(0x03002130, 0x00020309);
 
-	// set div, src_mux of clk_c906_1: [20:16]div_factor=2, [9:8]clk_src = 2 (disppll), 1188/2 = 594MHz
-	mmio_write_32(0x03002138, 0x00020209);
+	// set div, src_mux of clk_c906_1: [20:16]div_factor=9, [9:8]clk_src = 2 (disppll), 1188/9 = 132MHz
+	mmio_write_32(0x03002138, 0x00090209);
 #else
 	// set mpll = 800MHz
 	mmio_write_32(0x03002908, 0x00408101);
@@ -350,11 +350,11 @@ void sys_pll_nd(int vc_overdrive)
 #ifdef TPU_PERF_MODE
 	// set tpll = 1400MHz
 	mmio_write_32(0x0300290C, 0x07708101);
-	mmio_write_32(0x03002054, 0x00020009); //clk_tpu = TPLL(1400) / 2 = 700MHz
+	mmio_write_32(0x03002054, 0x00040009); //clk_tpu = TPLL(1400) / 4 = 350MHz
 #else
 	// set tpll = 850MHz
 	mmio_write_32(0x0300290C, 0x00448101);
-	mmio_write_32(0x03002054, 0x00030309); //clk_tpu = FPLL(1500) / 3 = 500MHz
+	mmio_write_32(0x03002054, 0x00050309); //clk_tpu = FPLL(1500) / 5 = 300MHz
 #endif
 
 	mmio_write_32(0x03002048, 0x00030009); //clk_cpu_axi0 = FPLL(1500) / 3
